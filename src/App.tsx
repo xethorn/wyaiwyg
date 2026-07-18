@@ -266,7 +266,11 @@ function App() {
                 setSelectedTaskId(null);
               }}
             >
-              <span className="menu-item-icon">🌐</span>
+              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
               <span>Central Command</span>
             </div>
           </div>
@@ -282,7 +286,9 @@ function App() {
                 setSelectedTaskId(null);
               }}
             >
-              <span className="menu-item-icon">📁</span>
+              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
               <span>wyaiwyg (xethorn/wyaiwyg)</span>
             </div>
 
@@ -297,8 +303,13 @@ function App() {
                     setActiveView("chat");
                   }}
                   title={`#${task.id}: ${task.title}`}
+                  style={{ display: "flex", alignItems: "center" }}
                 >
-                  #{task.id} {task.title}
+                  <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
+                    <polyline points="9 11 12 14 22 4"></polyline>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                  </svg>
+                  <span>#{task.id} {task.title}</span>
                 </div>
               ))}
             </div>

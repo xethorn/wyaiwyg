@@ -285,6 +285,15 @@ body {
   font-weight: 600;
 }
 
+.brand-icon {
+  font-weight: bold;
+  color: var(--bg-sidebar);
+  background-color: var(--text-primary);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
 .chat-bubble-content {
   padding: 0.75rem 1rem;
   border-radius: 8px;
