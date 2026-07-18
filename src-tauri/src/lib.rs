@@ -184,10 +184,17 @@ fn select_project(state: tauri::State<ProjectState>, path: String) -> Result<Pro
 }
 
 #[tauri::command]
-fn select_project_folder(state: tauri::State<ProjectState>) -> Result<Option<ProjectInfo>, String> {
-    let folder = rfd::FileDialog::new()
-        .set_title("Select Project Folder")
-        .pick_folder();
+fn select_project_folder(app_handle: tauri::AppHandle, state: tauri::State<ProjectState>) -> Result<Option<ProjectInfo>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    
+    app_handle.run_on_main_thread(move || {
+        let folder = rfd::FileDialog::new()
+            .set_title("Select Project Folder")
+            .pick_folder();
+        let _ = tx.send(folder);
+    }).map_err(|e| format!("Failed to run folder picker on main thread: {}", e))?;
+    
+    let folder = rx.recv().map_err(|e| format!("Failed to receive folder picker result: {}", e))?;
         
     if let Some(path_buf) = folder {
         let path_str = path_buf.to_string_lossy().to_string();

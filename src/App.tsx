@@ -280,7 +280,10 @@ function App() {
     }));
 
     try {
-      const executionLogs = await invoke<AgentLog[]>("execute_task", { taskId: currentTaskId });
+      const executionLogs = await invoke<AgentLog[]>("execute_task", { 
+        taskId: currentTaskId,
+        task_id: currentTaskId 
+      });
 
       // Stream logs sequentially into the logStreamMessage bubble
       executionLogs.forEach((log, index) => {
@@ -309,22 +312,40 @@ function App() {
       });
 
     } catch (error) {
+      console.error("Agent execution failed:", error);
+      const errorLog: AgentLog = {
+        timestamp: new Date().toLocaleTimeString(),
+        message: `Execution failed: ${error}`,
+        level: "error"
+      };
+      
       setChatHistories((prev) => {
         const history = prev[currentTaskId] || [];
         const updatedHistory = history.map((msg) => {
           if (msg.id === streamMessageId) {
-            const errorLog: AgentLog = {
-              timestamp: new Date().toLocaleTimeString(),
-              message: `Execution failed: ${error}`,
-              level: "error"
-            };
             return {
               ...msg,
-              logs: [...(msg.logs || []), errorLog]
+              content: `Execution failed: ${error}`,
+              logs: [errorLog]
             };
           }
           return msg;
         });
+        
+        const hasPlaceholder = updatedHistory.some(msg => msg.id === streamMessageId);
+        if (!hasPlaceholder) {
+          const errorMessage: ChatMessage = {
+            id: Math.random().toString(),
+            sender: "agent",
+            content: `Execution failed: ${error}`,
+            isLogStream: true,
+            logs: [errorLog]
+          };
+          return {
+            ...prev,
+            [currentTaskId]: [...history, errorMessage]
+          };
+        }
         return { ...prev, [currentTaskId]: updatedHistory };
       });
       setIsExecuting(false);
@@ -410,25 +431,6 @@ function App() {
                       }}
                       title={project.path}
                     >
-                      {/* Dynamic Chevron indicator on the left */}
-                      <svg 
-                        className="menu-item-icon" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        style={{ 
-                          width: "10px", 
-                          height: "10px", 
-                          marginRight: "4px",
-                          transform: (isActive && projectExpanded) ? "rotate(90deg)" : "rotate(0deg)", 
-                          transition: "transform 0.1s" 
-                        }}
-                      >
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                      </svg>
                       <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                         {(isActive && projectExpanded) && <line x1="2" y1="10" x2="22" y2="10"></line>}
@@ -453,9 +455,8 @@ function App() {
                                 setActiveView("chat");
                               }}
                               title={`#${task.id}: ${task.title}`}
-                              style={{ display: "flex", alignItems: "center" }}
                             >
-                              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
+                              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginTop: "3px", flexShrink: 0 }}>
                                 {task.status === "done" ? (
                                   <>
                                     <polyline points="9 11 12 14 22 4"></polyline>
