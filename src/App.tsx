@@ -498,6 +498,19 @@ function App() {
 
         {activeView === "project" && (
           <div className="coming-soon-container drag-zone">
+            <img 
+              src="/logo.jpg" 
+              alt="WYAIWYG Logo" 
+              className="no-drag"
+              style={{ 
+                width: "96px", 
+                height: "96px", 
+                borderRadius: "22px", 
+                marginBottom: "1.5rem",
+                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+                border: "1px solid rgba(255, 255, 255, 0.05)"
+              }} 
+            />
             {activeProject ? (
               <>
                 <div className="coming-soon-title">{activeProject.name}</div>
