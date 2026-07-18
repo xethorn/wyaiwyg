@@ -41,7 +41,7 @@ pub fn execute(project_path: &str, task_id: &str) -> Result<Vec<AgentLog>, Strin
 
             // Spawn the agy process in headless accept-edits mode
             let output = Command::new(&cfg.agy_path)
-                .args(&["--mode", "accept-edits", "--print", "--prompt", &prompt])
+                .args(&["--mode", "accept-edits", "--print", "--dangerously-skip-permissions", "--prompt", &prompt])
                 .current_dir(project_path) // run in project folder
                 .output();
 

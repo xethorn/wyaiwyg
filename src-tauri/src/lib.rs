@@ -75,9 +75,13 @@ fn create_task(state: tauri::State<ProjectState>, title: String, description: St
 
 #[tauri::command]
 fn execute_task(state: tauri::State<ProjectState>, task_id: String) -> Result<Vec<AgentLog>, String> {
-    let path_opt = state.current_path.lock().map_err(|e| e.to_string())?;
-    if let Some(ref path) = *path_opt {
-        agent::execute(path, &task_id)
+    let path = {
+        let path_opt = state.current_path.lock().map_err(|e| e.to_string())?;
+        path_opt.clone()
+    };
+    
+    if let Some(path_str) = path {
+        agent::execute(&path_str, &task_id)
     } else {
         Err("No active project folder selected".to_string())
     }
