@@ -40,6 +40,7 @@ function App() {
   // Navigation View States
   const [activeView, setActiveView] = useState<"central_command" | "project" | "chat">("project");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [projectExpanded, setProjectExpanded] = useState(true);
 
   // Core Data States
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -276,41 +277,63 @@ function App() {
               onClick={() => {
                 setActiveView("project");
                 setSelectedTaskId(null);
+                setProjectExpanded(!projectExpanded);
               }}
             >
+              {/* Dynamic Chevron indicator on the left */}
+              <svg 
+                className="menu-item-icon" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                style={{ 
+                  width: "10px", 
+                  height: "10px", 
+                  marginRight: "4px",
+                  transform: projectExpanded ? "rotate(90deg)" : "rotate(0deg)", 
+                  transition: "transform 0.1s" 
+                }}
+              >
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
               <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
               </svg>
               <span>wyaiwyg (xethorn/wyaiwyg)</span>
             </div>
 
-            {/* List Active Tasks inside project */}
-            <div className="submenu-list">
-              {tasks.map((task) => (
-                <div 
-                  key={task.id}
-                  className={`submenu-item ${selectedTaskId === task.id ? "active" : ""}`}
-                  onClick={() => {
-                    setSelectedTaskId(task.id);
-                    setActiveView("chat");
-                  }}
-                  title={`#${task.id}: ${task.title}`}
-                  style={{ display: "flex", alignItems: "center" }}
-                >
-                  <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
-                    {task.status === "done" ? (
-                      <>
-                        <polyline points="9 11 12 14 22 4"></polyline>
-                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                      </>
-                    ) : (
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    )}
-                  </svg>
-                  <span>#{task.id} {task.title}</span>
-                </div>
-              ))}
-            </div>
+            {/* List Active Tasks inside project (only if projectExpanded is true) */}
+            {projectExpanded && (
+              <div className="submenu-list">
+                {tasks.map((task) => (
+                  <div 
+                    key={task.id}
+                    className={`submenu-item ${selectedTaskId === task.id ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedTaskId(task.id);
+                      setActiveView("chat");
+                    }}
+                    title={`#${task.id}: ${task.title}`}
+                    style={{ display: "flex", alignItems: "center" }}
+                  >
+                    <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
+                      {task.status === "done" ? (
+                        <>
+                          <polyline points="9 11 12 14 22 4"></polyline>
+                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                        </>
+                      ) : (
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      )}
+                    </svg>
+                    <span>#{task.id} {task.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </nav>
       </aside>

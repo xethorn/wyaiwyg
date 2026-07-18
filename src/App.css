@@ -148,9 +148,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  margin-left: 1.5rem;
+  margin-left: 1.15rem;
   margin-top: 0.25rem;
-  border-left: 1px solid var(--border-color);
   padding-left: 0.5rem;
 }
 
