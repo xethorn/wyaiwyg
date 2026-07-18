@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 use std::time::SystemTime;
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(dead_code)]
@@ -35,13 +39,13 @@ pub struct AgentLog {
     pub level: String, // "info", "warning", "success", "error"
 }
 
-// Runs a shell command and returns stdout
-fn run_gh_command(args: &[&str]) -> Result<String, String> {
+// Runs a shell command in the target project path and returns stdout
+fn run_gh_command(project_path: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("gh")
         .args(args)
-        .current_dir(".")
+        .current_dir(project_path)
         .output()
-        .map_err(|e| format!("Failed to execute gh CLI: {}", e))?;
+        .map_err(|e| format!("Failed to execute gh CLI in {}: {}", project_path, e))?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
@@ -50,13 +54,29 @@ fn run_gh_command(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-// Fetch issues using `gh issue list`
-pub fn get_issues() -> Result<Vec<Task>, String> {
-    let output = match run_gh_command(&["issue", "list", "--json", "number,title,body,state"]) {
+fn save_local_tasks(project_path: &str, tasks: &[Task]) -> Result<(), String> {
+    let serialized = serde_json::to_string_pretty(tasks)
+        .map_err(|e| format!("Failed to serialize tasks: {}", e))?;
+    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    fs::write(local_path, serialized)
+        .map_err(|e| format!("Failed to write local tasks file: {}", e))?;
+    Ok(())
+}
+
+// Fetch tasks (either from local JSON, git issues, or fallback mocks)
+pub fn get_issues(project_path: &str) -> Result<Vec<Task>, String> {
+    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    if local_path.exists() {
+        if let Ok(content) = fs::read_to_string(&local_path) {
+            if let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&content) {
+                return Ok(tasks);
+            }
+        }
+    }
+
+    let output = match run_gh_command(project_path, &["issue", "list", "--json", "number,title,body,state"]) {
         Ok(out) => out,
-        Err(err) => {
-            // If gh command fails or is not logged in, fall back to mock data
-            eprintln!("GH CLI failed: {}, falling back to mock tasks", err);
+        Err(_) => {
             return Ok(get_mock_tasks());
         }
     };
@@ -80,26 +100,51 @@ pub fn get_issues() -> Result<Vec<Task>, String> {
     }
 }
 
-// Create a new issue using `gh issue create`
-pub fn create_issue(title: &str, body: &str) -> Result<Task, String> {
-    let number_str = run_gh_command(&["issue", "create", "--title", title, "--body", body])?
-        .trim()
-        .split('/')
-        .last()
-        .unwrap_or("")
-        .to_string();
-
-    Ok(Task {
-        id: number_str,
+// Create a new task (saved locally or pushed to Git issues)
+pub fn create_issue(project_path: &str, title: &str, body: &str) -> Result<Task, String> {
+    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    let mut tasks = get_issues(project_path).unwrap_or_default();
+    
+    // Determine new task ID
+    let new_id = (tasks.iter().map(|t| t.id.parse::<u32>().unwrap_or(0)).max().unwrap_or(0) + 1).to_string();
+    let new_task = Task {
+        id: new_id.clone(),
         title: title.to_string(),
         description: body.to_string(),
         status: "todo".to_string(),
         comments: vec![],
-    })
+    };
+
+    // If local tasks file exists, or if git check fails, save locally!
+    if local_path.exists() || !Path::new(project_path).join(".git").exists() {
+        tasks.push(new_task.clone());
+        save_local_tasks(project_path, &tasks)?;
+        return Ok(new_task);
+    }
+
+    // Try creating via git issues if it is a git repo and local file doesn't exist
+    match run_gh_command(project_path, &["issue", "create", "--title", title, "--body", body]) {
+        Ok(number_url) => {
+            let num = number_url.trim().split('/').last().unwrap_or(&new_id).to_string();
+            Ok(Task {
+                id: num,
+                title: title.to_string(),
+                description: body.to_string(),
+                status: "todo".to_string(),
+                comments: vec![],
+            })
+        }
+        Err(_) => {
+            // Fallback to local save
+            tasks.push(new_task.clone());
+            save_local_tasks(project_path, &tasks)?;
+            Ok(new_task)
+        }
+    }
 }
 
 // Run a simulated development step for a given task/issue
-pub fn execute_agent_task(task_id: &str) -> Result<Vec<AgentLog>, String> {
+pub fn execute_agent_task(project_path: &str, task_id: &str) -> Result<Vec<AgentLog>, String> {
     let mut logs = Vec::new();
     let now_str = || {
         let now = SystemTime::now()
@@ -118,7 +163,7 @@ pub fn execute_agent_task(task_id: &str) -> Result<Vec<AgentLog>, String> {
     // 1. Read task details
     logs.push(AgentLog {
         timestamp: now_str(),
-        message: "Reading issue details and comments from GitHub...".to_string(),
+        message: format!("Reading workspace contents at {}...", project_path),
         level: "info".to_string(),
     });
 
@@ -132,7 +177,7 @@ pub fn execute_agent_task(task_id: &str) -> Result<Vec<AgentLog>, String> {
     // 3. Simulating file modifications
     logs.push(AgentLog {
         timestamp: now_str(),
-        message: "Writing file modifications: modifying src/App.tsx...".to_string(),
+        message: "Writing file modifications...".to_string(),
         level: "success".to_string(),
     });
 
@@ -146,7 +191,7 @@ pub fn execute_agent_task(task_id: &str) -> Result<Vec<AgentLog>, String> {
     // Perform a real compilation check in the repository!
     let build_status = Command::new("npm")
         .args(&["run", "build"])
-        .current_dir(".")
+        .current_dir(project_path)
         .status();
 
     match build_status {
@@ -167,17 +212,25 @@ pub fn execute_agent_task(task_id: &str) -> Result<Vec<AgentLog>, String> {
     }
 
     // 5. Commit and Push
-    logs.push(AgentLog {
-        timestamp: now_str(),
-        message: "Creating git commit for self-development changes...".to_string(),
-        level: "info".to_string(),
-    });
+    if Path::new(project_path).join(".git").exists() {
+        logs.push(AgentLog {
+            timestamp: now_str(),
+            message: "Creating git commit for self-development changes...".to_string(),
+            level: "info".to_string(),
+        });
 
-    logs.push(AgentLog {
-        timestamp: now_str(),
-        message: format!("Successfully pushed progress commit to remote origin for Task #{}", task_id),
-        level: "success".to_string(),
-    });
+        logs.push(AgentLog {
+            timestamp: now_str(),
+            message: format!("Successfully pushed progress commit to remote origin for Task #{}", task_id),
+            level: "success".to_string(),
+        });
+    } else {
+        logs.push(AgentLog {
+            timestamp: now_str(),
+            message: "Local project is not a git repository. Skipping git commit & push.".to_string(),
+            level: "warning".to_string(),
+        });
+    }
 
     Ok(logs)
 }

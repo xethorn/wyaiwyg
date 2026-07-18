@@ -28,6 +28,12 @@ interface DetectedTools {
   claude: boolean;
 }
 
+interface ProjectInfo {
+  name: string;
+  path: string;
+  is_git: boolean;
+}
+
 interface ChatMessage {
   id: string;
   sender: "user" | "agent";
@@ -66,6 +72,13 @@ function App() {
     claude: false
   });
 
+  // Local folder project info state
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo>({
+    name: "wyaiwyg",
+    path: "",
+    is_git: false
+  });
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Load tasks and settings on startup
@@ -73,6 +86,7 @@ function App() {
     loadTasks();
     loadConfig();
     checkTools();
+    loadProjectInfo();
   }, []);
 
   // Auto-scroll chat window
@@ -150,6 +164,31 @@ function App() {
       setDetectedTools(tools);
     } catch (error) {
       console.error("Failed to detect tools", error);
+    }
+  };
+
+  const loadProjectInfo = async () => {
+    try {
+      const info = await invoke<ProjectInfo>("get_project_info");
+      setProjectInfo(info);
+    } catch (error) {
+      console.error("Failed to load project details", error);
+    }
+  };
+
+  const handleSelectProjectFolder = async () => {
+    try {
+      const info = await invoke<ProjectInfo | null>("select_project_folder");
+      if (info) {
+        setProjectInfo(info);
+        setSelectedTaskId(null);
+        setActiveView("project");
+        setTimeout(() => {
+          loadTasks();
+        }, 100);
+      }
+    } catch (error) {
+      console.error("Failed to select folder project", error);
     }
   };
 
@@ -301,7 +340,29 @@ function App() {
           </div>
 
           <div className="menu-section">
-            <div className="menu-section-title">Projects</div>
+            <div className="menu-section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Projects</span>
+              <button 
+                className="no-drag" 
+                onClick={handleSelectProjectFolder}
+                style={{ 
+                  background: "none", 
+                  border: "none", 
+                  color: "var(--text-secondary)", 
+                  cursor: "pointer", 
+                  padding: "2px",
+                  display: "flex",
+                  alignItems: "center" 
+                }}
+                title="Open Folder Project"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "12px", height: "12px" }}>
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  <line x1="12" y1="11" x2="12" y2="17"></line>
+                  <line x1="9" y1="14" x2="15" y2="14"></line>
+                </svg>
+              </button>
+            </div>
             
             {/* Project: wyaiwyg */}
             <div 
@@ -311,6 +372,7 @@ function App() {
                 setSelectedTaskId(null);
                 setProjectExpanded(!projectExpanded);
               }}
+              title={projectInfo.path}
             >
               {/* Dynamic Chevron indicator on the left */}
               <svg 
@@ -335,7 +397,7 @@ function App() {
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                 {projectExpanded && <line x1="2" y1="10" x2="22" y2="10"></line>}
               </svg>
-              <span>wyaiwyg (xethorn/wyaiwyg)</span>
+              <span>{projectInfo.name}</span>
             </div>
 
             {/* List Active Tasks inside project (only if projectExpanded is true) */}
@@ -390,13 +452,16 @@ function App() {
 
         {activeView === "project" && (
           <div className="coming-soon-container drag-zone">
-            <div className="coming-soon-title">xethorn / wyaiwyg</div>
+            <div className="coming-soon-title">{projectInfo.name}</div>
             <div className="coming-soon-desc" style={{ maxWidth: "450px" }}>
-              Welcome to the WYAIWYG Project workspace. Select one of the active tasks in the sidebar to open the conversational agent chat interface and start developing!
+              Location: <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{projectInfo.path}</span>
+              <br/><br/>
+              Welcome to the local folder project workspace. Select one of the active tasks in the sidebar to open the conversational agent chat interface and start developing!
             </div>
             <div className="panel-header-actions no-drag" style={{ marginTop: "1rem" }}>
-              <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙ Configure Settings</button>
+              <button className="btn-secondary" onClick={handleSelectProjectFolder}>📁 Open Folder Project</button>
               <button className="btn-secondary" onClick={loadTasks}>Sync Tasks</button>
+              <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙ Settings</button>
             </div>
           </div>
         )}

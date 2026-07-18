@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use crate::github::AgentLog;
 use crate::config;
 
-pub fn execute(task_id: &str) -> Result<Vec<AgentLog>, String> {
+pub fn execute(project_path: &str, task_id: &str) -> Result<Vec<AgentLog>, String> {
     let cfg = config::load();
     let now_str = || {
         let now = SystemTime::now()
@@ -21,7 +21,7 @@ pub fn execute(task_id: &str) -> Result<Vec<AgentLog>, String> {
     });
 
     // Fetch the task description
-    let tasks = crate::github::get_issues().unwrap_or_default();
+    let tasks = crate::github::get_issues(project_path).unwrap_or_default();
     let task = tasks.iter().find(|t| t.id == task_id);
     let prompt = match task {
         Some(t) => format!(
@@ -42,7 +42,7 @@ pub fn execute(task_id: &str) -> Result<Vec<AgentLog>, String> {
             // Spawn the agy process in headless accept-edits mode
             let output = Command::new(&cfg.agy_path)
                 .args(&["--mode", "accept-edits", "--print", "--prompt", &prompt])
-                .current_dir("..") // run in project root
+                .current_dir(project_path) // run in project folder
                 .output();
 
             match output {
@@ -102,7 +102,7 @@ pub fn execute(task_id: &str) -> Result<Vec<AgentLog>, String> {
 
             let output = Command::new("sh")
                 .args(&["-c", &format!("{} -p \"{}\"", cfg.claude_command, prompt)])
-                .current_dir("..")
+                .current_dir(project_path)
                 .output();
 
             match output {
@@ -254,7 +254,7 @@ pub fn execute(task_id: &str) -> Result<Vec<AgentLog>, String> {
             });
 
             // Delegate to the github mock runner
-            match crate::github::execute_agent_task(task_id) {
+            match crate::github::execute_agent_task(project_path, task_id) {
                 Ok(mut mock_logs) => {
                     logs.append(&mut mock_logs);
                 }
