@@ -248,14 +248,6 @@ function App() {
     <div className="app-container">
       {/* Left Sidebar Pane */}
       <aside className="sidebar drag-zone">
-        <div className="sidebar-header">
-          <div className="sidebar-title">
-            <span className="brand-icon">W</span>
-            <span>wyaiwyg</span>
-          </div>
-          <div className="sidebar-subtitle">Agentic Env</div>
-        </div>
-
         <nav className="sidebar-menu no-drag">
           <div className="menu-section">
             {/* Central Command Link */}
