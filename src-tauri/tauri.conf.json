@@ -14,7 +14,8 @@
       {
         "title": "WYAIWYG",
         "width": 1200,
-        "height": 800
+        "height": 800,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

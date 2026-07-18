@@ -28,35 +28,24 @@ interface DetectedTools {
   claude: boolean;
 }
 
-interface FileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-}
-
-interface EditorTab {
-  name: string;
-  path: string;
+interface ChatMessage {
+  id: string;
+  sender: "user" | "agent";
+  content: string;
+  isLogStream?: boolean;
+  logs?: AgentLog[];
 }
 
 function App() {
-  // Filesystem States
-  const [rootFiles, setRootFiles] = useState<FileEntry[]>([]);
-  const [expandedDirs, setExpandedDirs] = useState<{ [path: string]: boolean }>({});
-  const [expandedDirContents, setExpandedDirContents] = useState<{ [path: string]: FileEntry[] }>({});
-  
-  // Editor States
-  const [openTabs, setOpenTabs] = useState<EditorTab[]>([]);
-  const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
-  const [tabContents, setTabContents] = useState<{ [path: string]: string }>({});
-  const [unsavedFiles, setUnsavedFiles] = useState<Set<string>>(new Set());
+  // Navigation View States
+  const [activeView, setActiveView] = useState<"central_command" | "project" | "chat">("project");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  // Tasks & Run configuration States
+  // Core Data States
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string>("");
+  const [chatHistories, setChatHistories] = useState<{ [taskId: string]: ChatMessage[] }>({});
   const [isExecuting, setIsExecuting] = useState(false);
-  const [logs, setLogs] = useState<AgentLog[]>([]);
-  const [terminalPrompt, setTerminalPrompt] = useState("");
+  const [promptText, setPromptText] = useState("");
   const [isListening, setIsListening] = useState(true);
 
   // App Settings States
@@ -72,78 +61,44 @@ function App() {
     claude: false
   });
 
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize data
+  // Load tasks and settings on startup
   useEffect(() => {
-    loadRootFiles();
     loadTasks();
     loadConfig();
     checkTools();
-    addSystemLog("WYAIWYG IDE environment initialized successfully.", "success");
-    addSystemLog("Ready for development. Select a Task config to run active Agent.", "info");
   }, []);
 
-  // Auto-scroll logs terminal
+  // Auto-scroll chat window
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistories, isExecuting]);
 
-  // Periodic simulated comment streaming
+  // Periodic comment listener simulation
   useEffect(() => {
-    if (!isListening) return;
+    if (!isListening || !selectedTaskId) return;
 
     const interval = setInterval(() => {
       const randomComments = [
-        "GitHub Webhook: New comment from xethorn on #1: 'Let's adjust the layout to be more IntelliJ-like.'",
-        "GitHub Webhook: New comment from xethorn on #2: 'Refactored backend modules into config and agent packages.'",
-        "GitHub Webhook: Task #3 marked as active development target.",
+        "GitHub Webhook: New comment from xethorn on the project: 'Let's refine the UI layout.'",
+        "GitHub Webhook: Task list updated. 0 conflicts.",
         "GitHub Webhook: Pushed verification complete on main branch."
       ];
       
       const randomMsg = randomComments[Math.floor(Math.random() * randomComments.length)];
-      addSystemLog(randomMsg, "info");
-    }, 25000);
+      appendAgentMessage(selectedTaskId, randomMsg);
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, [isListening]);
+  }, [isListening, selectedTaskId]);
 
-  // Load root level directory
-  const loadRootFiles = async () => {
-    try {
-      const entries = await invoke<FileEntry[]>("get_dir_entries", { dirPath: null });
-      setRootFiles(entries);
-    } catch (error) {
-      addSystemLog(`Failed to load directory explorer: ${error}`, "error");
-    }
-  };
-
-  // Toggle folders lazily
-  const toggleDir = async (path: string) => {
-    if (expandedDirs[path]) {
-      setExpandedDirs((prev) => ({ ...prev, [path]: false }));
-    } else {
-      try {
-        const subEntries = await invoke<FileEntry[]>("get_dir_entries", { dirPath: path });
-        setExpandedDirContents((prev) => ({ ...prev, [path]: subEntries }));
-        setExpandedDirs((prev) => ({ ...prev, [path]: true }));
-      } catch (error) {
-        addSystemLog(`Failed to expand folder: ${error}`, "error");
-      }
-    }
-  };
-
-  // Load tasks / GitHub Issues
   const loadTasks = async () => {
     try {
       const fetchedTasks = await invoke<Task[]>("fetch_tasks");
       setTasks(fetchedTasks);
-      // Auto-select first task as default run configuration
-      if (fetchedTasks.length > 0 && !selectedTaskId) {
-        setSelectedTaskId(fetchedTasks[0].id);
-      }
     } catch (error) {
-      addSystemLog(`Failed to load GitHub run configurations: ${error}`, "error");
+      console.error("Failed to load tasks", error);
     }
   };
 
@@ -152,7 +107,7 @@ function App() {
       const loadedConfig = await invoke<AppConfig>("get_config");
       setConfig(loadedConfig);
     } catch (error) {
-      addSystemLog(`Failed to load app settings: ${error}`, "error");
+      console.error("Failed to load config", error);
     }
   };
 
@@ -161,351 +116,329 @@ function App() {
       const tools = await invoke<DetectedTools>("detect_tools");
       setDetectedTools(tools);
     } catch (error) {
-      addSystemLog(`Failed to check installed toolchains: ${error}`, "error");
+      console.error("Failed to detect tools", error);
     }
   };
 
   const handleSaveConfig = async () => {
     try {
       await invoke("save_config", { config });
-      addSystemLog(`Settings updated. Active AI provider: ${config.active_provider}`, "success");
       setShowSettings(false);
-    } catch (error) {
-      addSystemLog(`Failed to save settings: ${error}`, "error");
-    }
-  };
-
-  // Open file in editor tab
-  const handleOpenFile = async (name: string, path: string) => {
-    // If tab is already open, just focus it
-    if (openTabs.some((tab) => tab.path === path)) {
-      setActiveTabPath(path);
-      return;
-    }
-
-    try {
-      const content = await invoke<string>("get_file_content", { filePath: path });
-      setTabContents((prev) => ({ ...prev, [path]: content }));
-      setOpenTabs((prev) => [...prev, { name, path }]);
-      setActiveTabPath(path);
-    } catch (error) {
-      addSystemLog(`Failed to open file: ${error}`, "error");
-    }
-  };
-
-  // Close tab
-  const handleCloseTab = (e: React.MouseEvent, path: string) => {
-    e.stopPropagation();
-    const updatedTabs = openTabs.filter((tab) => tab.path !== path);
-    setOpenTabs(updatedTabs);
-
-    if (activeTabPath === path) {
-      if (updatedTabs.length > 0) {
-        setActiveTabPath(updatedTabs[updatedTabs.length - 1].path);
-      } else {
-        setActiveTabPath(null);
+      // Append a system notification inside the active chat if applicable
+      if (selectedTaskId) {
+        appendAgentMessage(selectedTaskId, `Settings saved. Active AI provider set to: ${config.active_provider}`);
       }
-    }
-  };
-
-  // Save changes to disk
-  const handleSaveFile = async (path: string) => {
-    const content = tabContents[path];
-    if (content === undefined) return;
-
-    try {
-      await invoke("save_file_content", { filePath: path, content });
-      setUnsavedFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
-      addSystemLog(`File saved: ${path.split("/").pop()}`, "success");
     } catch (error) {
-      addSystemLog(`Failed to save file: ${error}`, "error");
+      console.error("Failed to save config", error);
     }
   };
 
-  // Handle local text area editing
-  const handleTextChange = (path: string, content: string) => {
-    setTabContents((prev) => ({ ...prev, [path]: content }));
-    setUnsavedFiles((prev) => {
-      const next = new Set(prev);
-      next.add(path);
-      return next;
-    });
+  const appendAgentMessage = (taskId: string, content: string) => {
+    const newMessage: ChatMessage = {
+      id: Math.random().toString(),
+      sender: "agent",
+      content
+    };
+    setChatHistories((prev) => ({
+      ...prev,
+      [taskId]: [...(prev[taskId] || []), newMessage]
+    }));
   };
 
-  const addSystemLog = (message: string, level: string = "info") => {
-    const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev, { timestamp: time, message, level }]);
-  };
+  const handleSendPrompt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promptText.trim() || !selectedTaskId || isExecuting) return;
 
-  // Execute Agent Development Cycle
-  const handleRunAgent = async (taskId: string) => {
-    if (isExecuting || !taskId) return;
+    const currentTaskId = selectedTaskId;
+    const userPrompt = promptText;
+    setPromptText("");
+
+    // 1. Append user message
+    const userMessage: ChatMessage = {
+      id: Math.random().toString(),
+      sender: "user",
+      content: userPrompt
+    };
+
+    setChatHistories((prev) => ({
+      ...prev,
+      [currentTaskId]: [...(prev[currentTaskId] || []), userMessage]
+    }));
+
+    // 2. Set executing state and trigger Tauri agent execution
     setIsExecuting(true);
-    addSystemLog(`Launching development target for Task #${taskId}...`, "info");
+    
+    // Append a placeholder log stream message that we will populate live
+    const streamMessageId = Math.random().toString();
+    const logStreamMessage: ChatMessage = {
+      id: streamMessageId,
+      sender: "agent",
+      content: "Initializing agent...",
+      isLogStream: true,
+      logs: []
+    };
+
+    setChatHistories((prev) => ({
+      ...prev,
+      [currentTaskId]: [...(prev[currentTaskId] || []), logStreamMessage]
+    }));
 
     try {
-      const executionLogs = await invoke<AgentLog[]>("execute_task", { taskId });
-      
+      const executionLogs = await invoke<AgentLog[]>("execute_task", { taskId: currentTaskId });
+
+      // Stream logs sequentially into the logStreamMessage bubble
       executionLogs.forEach((log, index) => {
         setTimeout(() => {
-          let time = log.timestamp;
-          if (!isNaN(Number(log.timestamp))) {
-            time = new Date(parseInt(log.timestamp) * 1000).toLocaleTimeString();
-          }
-          setLogs((prev) => [...prev, { timestamp: time, message: log.message, level: log.level }]);
-          
+          setChatHistories((prev) => {
+            const history = prev[currentTaskId] || [];
+            const updatedHistory = history.map((msg) => {
+              if (msg.id === streamMessageId) {
+                const logsList = [...(msg.logs || []), log];
+                return {
+                  ...msg,
+                  content: `Agent logs (${logsList.length} entries)`,
+                  logs: logsList
+                };
+              }
+              return msg;
+            });
+            return { ...prev, [currentTaskId]: updatedHistory };
+          });
+
           if (index === executionLogs.length - 1) {
             setIsExecuting(false);
-            loadTasks();
-            // Reload root files as files might have been edited by the agent!
-            loadRootFiles();
-            // If active tab is open, reload its content from disk!
-            if (activeTabPath) {
-              reloadFileFromDisk(activeTabPath);
-            }
+            loadTasks(); // refresh task status
           }
         }, index * 800);
       });
 
     } catch (error) {
-      addSystemLog(`Agent run failed: ${error}`, "error");
+      setChatHistories((prev) => {
+        const history = prev[currentTaskId] || [];
+        const updatedHistory = history.map((msg) => {
+          if (msg.id === streamMessageId) {
+            const errorLog: AgentLog = {
+              timestamp: new Date().toLocaleTimeString(),
+              message: `Execution failed: ${error}`,
+              level: "error"
+            };
+            return {
+              ...msg,
+              logs: [...(msg.logs || []), errorLog]
+            };
+          }
+          return msg;
+        });
+        return { ...prev, [currentTaskId]: updatedHistory };
+      });
       setIsExecuting(false);
     }
   };
 
-  const reloadFileFromDisk = async (path: string) => {
-    try {
-      const content = await invoke<string>("get_file_content", { filePath: path });
-      setTabContents((prev) => ({ ...prev, [path]: content }));
-      setUnsavedFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
-    } catch (_) {}
+  const getSelectedTask = (): Task | undefined => {
+    return tasks.find((t) => t.id === selectedTaskId);
   };
 
-  const handleTerminalSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!terminalPrompt.trim()) return;
-
-    addSystemLog(`Terminal Command: "${terminalPrompt}"`, "info");
-    
-    // If the terminal command looks like a prompt instruction, we trigger the agent to execute it!
-    if (selectedTaskId) {
-      handleRunAgent(selectedTaskId);
-    } else {
-      addSystemLog("Select a task config run configuration to execute terminal agent instructions.", "warning");
-    }
-
-    setTerminalPrompt("");
-  };
-
-  // Render file tree recursively
-  const renderTreeNodes = (entries: FileEntry[], depth = 0) => {
-    return entries.map((entry) => {
-      const isExpanded = expandedDirs[entry.path];
-      const childEntries = expandedDirContents[entry.path] || [];
-
-      return (
-        <div key={entry.path}>
-          <div 
-            className={`tree-node ${activeTabPath === entry.path ? "file-active" : ""}`}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            onClick={() => {
-              if (entry.is_dir) {
-                toggleDir(entry.path);
-              } else {
-                handleOpenFile(entry.name, entry.path);
-              }
-            }}
-          >
-            <span className="node-icon">
-              {entry.is_dir ? (isExpanded ? "📂" : "📁") : "📄"}
-            </span>
-            <span>{entry.name}</span>
-          </div>
-          {entry.is_dir && isExpanded && renderTreeNodes(childEntries, depth + 1)}
-        </div>
-      );
-    });
-  };
-
-  // Generate editor line numbers array
-  const getLineNumbers = (content: string | undefined) => {
-    if (!content) return [1];
-    const lines = content.split("\n").length;
-    return Array.from({ length: lines }, (_, i) => i + 1);
+  const getActiveChatMessages = (): ChatMessage[] => {
+    if (!selectedTaskId) return [];
+    return chatHistories[selectedTaskId] || [];
   };
 
   return (
     <div className="app-container">
-      {/* IntelliJ Style Top Header Toolbar */}
-      <header className="app-header">
-        <div className="brand">
-          <div className="brand-icon">W</div>
-          <span className="brand-name">wyaiwyg [Workspace]</span>
+      {/* Left Sidebar Pane */}
+      <aside className="sidebar drag-zone">
+        <div className="sidebar-header">
+          <div className="sidebar-title">
+            <span className="brand-icon">W</span>
+            <span>wyaiwyg</span>
+          </div>
+          <div className="sidebar-subtitle">Agentic Env</div>
         </div>
 
-        <div className="toolbar-actions">
-          {/* Active run configuration dropdown */}
-          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Run Task:</span>
-          <select
-            className="run-config-select"
-            value={selectedTaskId}
-            onChange={(e) => setSelectedTaskId(e.target.value)}
-          >
-            {tasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                #{task.id} {task.title.substring(0, 30)}... ({task.status})
-              </option>
-            ))}
-          </select>
-
-          {/* IntelliJ Play Icon Button */}
-          <button 
-            className="icon-btn btn-run"
-            disabled={isExecuting || !selectedTaskId}
-            onClick={() => handleRunAgent(selectedTaskId)}
-            title="Run Agent on Configuration"
-          >
-            <span style={{ fontSize: "0.95rem" }}>▶</span>
-          </button>
-
-          <span style={{ width: "1px", height: "14px", backgroundColor: "var(--border-color)", margin: "0 0.25rem" }}></span>
-
-          <button className="btn-secondary" style={{ padding: "0.15rem 0.4rem", fontSize: "0.725rem" }} onClick={() => setShowSettings(true)}>
-            ⚙ Settings
-          </button>
-          
-          <button className="btn-secondary" style={{ padding: "0.15rem 0.4rem", fontSize: "0.725rem" }} onClick={loadTasks}>
-            Sync
-          </button>
-        </div>
-      </header>
-
-      {/* Main Layout Split */}
-      <div className="main-layout">
-        
-        {/* Left pane: Project explorer */}
-        <aside className="project-sidebar">
-          <div className="sidebar-header">
-            <span>Project Files</span>
-          </div>
-          <div className="file-tree-container">
-            {renderTreeNodes(rootFiles)}
-          </div>
-        </aside>
-
-        {/* Right pane: Tabs + Editor + Bottom Console */}
-        <main className="workspace-container">
-          
-          {/* Tabs bar */}
-          <div className="editor-tabs-bar">
-            {openTabs.map((tab) => (
-              <div 
-                key={tab.path} 
-                className={`editor-tab ${activeTabPath === tab.path ? "active" : ""}`}
-                onClick={() => setActiveTabPath(tab.path)}
-              >
-                <span>{tab.name}</span>
-                {unsavedFiles.has(tab.path) && <span style={{ color: "var(--accent-yellow)", fontSize: "0.6rem" }}>●</span>}
-                <span className="tab-close-btn" onClick={(e) => handleCloseTab(e, tab.path)}>
-                  ✕
-                </span>
-              </div>
-            ))}
+        <nav className="sidebar-menu no-drag">
+          <div className="menu-section">
+            {/* Central Command Link */}
+            <div 
+              className={`menu-item ${activeView === "central_command" ? "active" : ""}`}
+              onClick={() => {
+                setActiveView("central_command");
+                setSelectedTaskId(null);
+              }}
+            >
+              <span className="menu-item-icon">🌐</span>
+              <span>Central Command</span>
+            </div>
           </div>
 
-          {/* Code Editor space */}
-          <div className="editor-content-area">
-            {activeTabPath ? (
-              <div className="editor-textarea-container">
-                {/* Save shortcut handler or save action button */}
-                <button 
-                  className="action-btn" 
-                  style={{ position: "absolute", right: "20px", top: "15px", zIndex: 10, padding: "0.25rem 0.5rem", fontSize: "0.7rem" }}
-                  disabled={!unsavedFiles.has(activeTabPath)}
-                  onClick={() => handleSaveFile(activeTabPath)}
+          <div className="menu-section">
+            <div className="menu-section-title">Projects</div>
+            
+            {/* Project: wyaiwyg */}
+            <div 
+              className={`menu-item ${activeView === "project" ? "active" : ""}`}
+              onClick={() => {
+                setActiveView("project");
+                setSelectedTaskId(null);
+              }}
+            >
+              <span className="menu-item-icon">📁</span>
+              <span>wyaiwyg (xethorn/wyaiwyg)</span>
+            </div>
+
+            {/* List Active Tasks inside project */}
+            <div className="submenu-list">
+              {tasks.map((task) => (
+                <div 
+                  key={task.id}
+                  className={`submenu-item ${selectedTaskId === task.id ? "active" : ""}`}
+                  onClick={() => {
+                    setSelectedTaskId(task.id);
+                    setActiveView("chat");
+                  }}
+                  title={`#${task.id}: ${task.title}`}
                 >
-                  Save Code
-                </button>
-
-                <div className="editor-line-numbers">
-                  {getLineNumbers(tabContents[activeTabPath]).map((num) => (
-                    <div key={num}>{num}</div>
-                  ))}
+                  #{task.id} {task.title}
                 </div>
-                
-                <textarea
-                  className="editor-code-input"
-                  value={tabContents[activeTabPath] || ""}
-                  onChange={(e) => handleTextChange(activeTabPath, e.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="editor-placeholder">
-                <div style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>No File Open</div>
-                <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>Double-click a file in the sidebar explorer to start editing code.</div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
+        </nav>
+      </aside>
 
-          {/* Bottom terminal logs drawer */}
-          <footer className="terminal-drawer">
-            <div className="terminal-header">
-              <span className="terminal-title">Agent Terminal Console</span>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                  Webhook Listener:
+      {/* Main Panel Pane (Middle) */}
+      <main className="main-panel">
+        
+        {/* Render Views dynamically */}
+        {activeView === "central_command" && (
+          <div className="coming-soon-container drag-zone">
+            <div className="coming-soon-title">Central Command</div>
+            <div className="coming-soon-desc">Coming Soon! This workspace view is prepared for cross-repository orchestration and advanced telemetry dashboards.</div>
+            <button className="btn-secondary no-drag" onClick={() => setActiveView("project")}>
+              Back to Project
+            </button>
+          </div>
+        )}
+
+        {activeView === "project" && (
+          <div className="coming-soon-container drag-zone">
+            <div className="coming-soon-title">xethorn / wyaiwyg</div>
+            <div className="coming-soon-desc" style={{ maxWidth: "450px" }}>
+              Welcome to the WYAIWYG Project workspace. Select one of the active tasks in the sidebar to open the conversational agent chat interface and start developing!
+            </div>
+            <div className="panel-header-actions no-drag" style={{ marginTop: "1rem" }}>
+              <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙ Configure Settings</button>
+              <button className="btn-secondary" onClick={loadTasks}>Sync Tasks</button>
+            </div>
+          </div>
+        )}
+
+        {activeView === "chat" && selectedTaskId && (
+          <div className="chat-container">
+            {/* Main Panel Header toolbar */}
+            <header className="panel-header drag-zone">
+              <div className="panel-header-info">
+                <div className="panel-header-title">
+                  Task #{selectedTaskId}: {getSelectedTask()?.title}
+                </div>
+                <div className="panel-header-meta">
+                  Status: <strong style={{ color: "var(--accent-purple)" }}>{getSelectedTask()?.status.toUpperCase()}</strong> | AI Provider: <strong style={{ color: "var(--accent-blue)" }}>{config.active_provider.toUpperCase()}</strong>
+                </div>
+              </div>
+              <div className="panel-header-actions no-drag">
+                <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                  Stream Updates:
                 </span>
-                <span className={`status-dot ${isListening ? "active" : ""}`} style={{ width: "6px", height: "6px" }} />
+                <span className={`status-dot ${isListening ? "active" : ""}`} style={{ width: "6px", height: "6px", marginRight: "0.5rem" }} />
                 <button 
                   className="btn-secondary" 
-                  style={{ padding: "0.05rem 0.35rem", fontSize: "0.65rem" }} 
+                  style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }} 
                   onClick={() => setIsListening(!isListening)}
                 >
                   {isListening ? "Pause" : "Listen"}
                 </button>
-                <button className="btn-secondary" style={{ padding: "0.05rem 0.35rem", fontSize: "0.65rem" }} onClick={() => setLogs([])}>
-                  Clear
-                </button>
+                <button className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }} onClick={() => setShowSettings(true)}>⚙ settings</button>
+                <button className="btn-secondary" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }} onClick={loadTasks}>Sync</button>
               </div>
-            </div>
+            </header>
 
-            <div className="terminal-logs">
-              {logs.length === 0 ? (
-                <div className="terminal-placeholder">Ready. Spawn the agent to run edits in this workspace.</div>
+            {/* Chat Messages history log */}
+            <div className="chat-history">
+              {getActiveChatMessages().length === 0 ? (
+                <div className="chat-placeholder">
+                  <div className="chat-placeholder-title">Agent Chat Session Started</div>
+                  <div className="chat-placeholder-desc">
+                    Task description: "{getSelectedTask()?.description}"
+                    <br/><br/>
+                    Enter instructions at the bottom to trigger the AI agent development cycle. It will write edits, verify builds, and push updates back to GitHub.
+                  </div>
+                </div>
               ) : (
-                logs.map((log, idx) => (
-                  <div key={idx} className="log-entry">
-                    <span className="log-time">[{log.timestamp}]</span>
-                    <span className={`log-msg log-${log.level}`}>{log.message}</span>
+                getActiveChatMessages().map((message) => (
+                  <div key={message.id} className={`chat-bubble ${message.sender}`}>
+                    <span className="chat-bubble-sender">
+                      {message.sender === "user" ? "You" : `${config.active_provider.toUpperCase()} Agent`}
+                    </span>
+                    
+                    {message.isLogStream ? (
+                      // Render logs inside a console stdout container
+                      <div className="chat-bubble-content log-stream">
+                        {message.logs && message.logs.length > 0 ? (
+                          message.logs.map((log, idx) => (
+                            <div key={idx} className={`log-line log-${log.level}`}>
+                              <span style={{ opacity: 0.5 }}>[{log.timestamp}]</span>
+                              <span>{log.message}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div>Executing agent step...</div>
+                        )}
+                      </div>
+                    ) : (
+                      // Render standard text bubble
+                      <div className="chat-bubble-content">
+                        {message.content}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
-              <div ref={logsEndRef} />
+              {isExecuting && (
+                <div className="chat-bubble agent">
+                  <span className="chat-bubble-sender">Agent status</span>
+                  <div className="chat-bubble-content" style={{ fontStyle: "italic", opacity: 0.7 }}>
+                    Agent is processing changes...
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
 
-            {/* Terminal prompt input for direct commands */}
-            <form className="terminal-prompt-bar" onSubmit={handleTerminalSubmit}>
-              <span className="terminal-prompt-symbol">&gt;</span>
-              <input 
-                type="text"
-                className="terminal-prompt-input"
-                placeholder="Ask Agent to edit workspace (e.g. 'Add route config')..."
-                value={terminalPrompt}
-                onChange={(e) => setTerminalPrompt(e.target.value)}
-              />
+            {/* Prompt input field bar */}
+            <form className="chat-input-bar" onSubmit={handleSendPrompt}>
+              <div className="chat-input-container">
+                <span className="terminal-prompt-symbol">&gt;</span>
+                <input 
+                  type="text"
+                  className="chat-input-field"
+                  placeholder="Ask Agent to edit workspace (e.g. 'implement this task')..."
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                  disabled={isExecuting}
+                />
+                <button 
+                  type="submit" 
+                  className="chat-send-btn"
+                  disabled={isExecuting || !promptText.trim()}
+                >
+                  Send
+                </button>
+              </div>
             </form>
-          </footer>
+          </div>
+        )}
 
-        </main>
-      </div>
+      </main>
 
       {/* Settings Modal */}
       {showSettings && (
