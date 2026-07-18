@@ -1,6 +1,7 @@
 mod github;
 mod config;
 mod agent;
+mod editor;
 
 use github::{Task, AgentLog};
 use config::AppConfig;
@@ -41,6 +42,21 @@ fn detect_tools() -> config::DetectedTools {
     config::detect_tools()
 }
 
+#[tauri::command]
+fn get_dir_entries(dir_path: Option<String>) -> Result<Vec<editor::FileEntry>, String> {
+    editor::get_dir_entries(dir_path)
+}
+
+#[tauri::command]
+fn get_file_content(file_path: String) -> Result<String, String> {
+    editor::get_file_content(&file_path)
+}
+
+#[tauri::command]
+fn save_file_content(file_path: String, content: String) -> Result<(), String> {
+    editor::save_file_content(&file_path, &content)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -52,7 +68,10 @@ pub fn run() {
             execute_task,
             get_config,
             save_config,
-            detect_tools
+            detect_tools,
+            get_dir_entries,
+            get_file_content,
+            save_file_content
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
