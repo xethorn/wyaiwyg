@@ -16,6 +16,18 @@ interface AgentLog {
   level: string; // "info", "warning", "success", "error"
 }
 
+interface AppConfig {
+  active_provider: string; // "agy" | "claude" | "gemini_api" | "mock"
+  agy_path: string;
+  claude_command: string;
+  gemini_api_key: string;
+}
+
+interface DetectedTools {
+  agy: boolean;
+  claude: boolean;
+}
+
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [logs, setLogs] = useState<AgentLog[]>([]);
@@ -24,9 +36,26 @@ function App() {
   const [newTaskDesc, setNewTaskDesc] = useState("");
   const [isListening, setIsListening] = useState(true);
 
-  // Load tasks on startup
+  // Configuration settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const [config, setConfig] = useState<AppConfig>({
+    active_provider: "mock",
+    agy_path: "/Users/michaelortali/.local/bin/agy",
+    claude_command: "claude",
+    gemini_api_key: ""
+  });
+
+  // Detected tools on user machine
+  const [detectedTools, setDetectedTools] = useState<DetectedTools>({
+    agy: false,
+    claude: false
+  });
+
+  // Load tasks and configuration on startup
   useEffect(() => {
     loadTasks();
+    loadConfig();
+    checkTools();
     addSystemLog("WYAIWYG Agent environment initialized. Listening to repository xethorn/wyaiwyg.", "success");
   }, []);
 
@@ -35,7 +64,6 @@ function App() {
     if (!isListening) return;
 
     const interval = setInterval(() => {
-      // Simulate polling/streaming comment updates
       const randomComments = [
         "GitHub Webhook: New comment from xethorn on #1: 'Let's adjust the console margin to be narrower.'",
         "GitHub Webhook: New comment from xethorn on #2: 'Can we build this using ureq instead of reqwest?'",
@@ -45,7 +73,7 @@ function App() {
       
       const randomMsg = randomComments[Math.floor(Math.random() * randomComments.length)];
       addSystemLog(randomMsg, "info");
-    }, 15000); // Poll every 15 seconds
+    }, 20000); // Poll every 20 seconds
 
     return () => clearInterval(interval);
   }, [isListening]);
@@ -56,6 +84,34 @@ function App() {
       setTasks(fetchedTasks);
     } catch (error) {
       addSystemLog(`Failed to fetch tasks: ${error}`, "error");
+    }
+  };
+
+  const loadConfig = async () => {
+    try {
+      const loadedConfig = await invoke<AppConfig>("get_config");
+      setConfig(loadedConfig);
+    } catch (error) {
+      addSystemLog(`Failed to load config: ${error}`, "error");
+    }
+  };
+
+  const checkTools = async () => {
+    try {
+      const tools = await invoke<DetectedTools>("detect_tools");
+      setDetectedTools(tools);
+    } catch (error) {
+      addSystemLog(`Failed to detect system tools: ${error}`, "error");
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      await invoke("save_config", { config });
+      addSystemLog(`Configuration saved. Active provider set to: ${config.active_provider}`, "success");
+      setShowSettings(false);
+    } catch (error) {
+      addSystemLog(`Failed to save config: ${error}`, "error");
     }
   };
 
@@ -89,7 +145,7 @@ function App() {
   const handleExecuteTask = async (taskId: string) => {
     if (executingTaskId) return;
     setExecutingTaskId(taskId);
-    addSystemLog(`Triggering agent execution for Task #${taskId}...`, "info");
+    addSystemLog(`Triggering agent execution for Task #${taskId} using [${config.active_provider}]...`, "info");
 
     try {
       const executionLogs = await invoke<AgentLog[]>("execute_task", { taskId });
@@ -97,7 +153,10 @@ function App() {
       // Stream logs sequentially into console for realistic effect
       executionLogs.forEach((log, index) => {
         setTimeout(() => {
-          const time = new Date(parseInt(log.timestamp) * 1000).toLocaleTimeString();
+          let time = log.timestamp;
+          if (!isNaN(Number(log.timestamp))) {
+            time = new Date(parseInt(log.timestamp) * 1000).toLocaleTimeString();
+          }
           setLogs((prev) => [
             ...prev,
             { timestamp: time, message: log.message, level: log.level }
@@ -130,22 +189,30 @@ function App() {
         </div>
         <div className="system-status">
           <div className="status-item">
+            <span className="text-muted">Provider:</span>
+            <strong style={{ color: "var(--accent-purple)" }}>{config.active_provider.toUpperCase()}</strong>
+          </div>
+          <div className="status-item">
             <span className="text-muted">Repo:</span>
             <strong>xethorn/wyaiwyg</strong>
           </div>
           <div className="status-item">
-            <span className="text-muted">Account:</span>
-            <strong>xethorn</strong>
-          </div>
-          <div className="status-item">
-            <span className="text-muted">Reactive Listener:</span>
+            <span className="text-muted">Reactive:</span>
             <span className={`status-dot ${isListening ? "active" : ""}`} />
             <button 
               className="btn-secondary" 
-              style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
+              style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem", marginLeft: "0.5rem" }}
               onClick={() => setIsListening(!isListening)}
             >
               {isListening ? "Pause" : "Listen"}
+            </button>
+          </div>
+          <div className="status-item" style={{ gap: "0.5rem" }}>
+            <button className="btn-secondary" onClick={() => { checkTools(); setShowSettings(true); }}>
+              Settings
+            </button>
+            <button className="btn-secondary" onClick={loadTasks}>
+              Sync
             </button>
           </div>
         </div>
@@ -157,9 +224,6 @@ function App() {
         <section className="panel board-container">
           <div className="panel-header">
             <h2 className="panel-title">GitHub Project Board</h2>
-            <button className="btn-secondary" onClick={loadTasks} style={{ fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}>
-              Sync Board
-            </button>
           </div>
           
           <div className="board-columns">
@@ -186,7 +250,7 @@ function App() {
                     disabled={executingTaskId !== null}
                     onClick={() => handleExecuteTask(task.id)}
                   >
-                    {executingTaskId === task.id ? "Developing..." : "Develop Task"}
+                    {executingTaskId === task.id ? "Executing..." : "Run Agent"}
                   </button>
                 </div>
               ))}
@@ -215,7 +279,7 @@ function App() {
                     disabled={executingTaskId !== null}
                     onClick={() => handleExecuteTask(task.id)}
                   >
-                    {executingTaskId === task.id ? "Developing..." : "Develop Task"}
+                    {executingTaskId === task.id ? "Executing..." : "Run Agent"}
                   </button>
                 </div>
               ))}
@@ -277,6 +341,94 @@ function App() {
           </form>
         </section>
       </div>
+
+      {/* Settings Modal Overlay */}
+      {showSettings && (
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div className="modal-header">
+              <h3 className="modal-title">AI Provider Configuration</h3>
+              <button className="btn-secondary" style={{ padding: "0.2rem 0.5rem" }} onClick={() => setShowSettings(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Active Provider</label>
+                <select 
+                  className="form-select"
+                  value={config.active_provider}
+                  onChange={(e) => setConfig({ ...config, active_provider: e.target.value })}
+                >
+                  <option value="mock">Mock Simulator (No external calls)</option>
+                  <option value="agy">
+                    Antigravity CLI (agy) {detectedTools.agy ? "🟢 Detected" : "🔴 Not Installed"}
+                  </option>
+                  <option value="claude">
+                    Claude Code CLI {detectedTools.claude ? "🟢 Detected" : "🔴 Not Installed"}
+                  </option>
+                  <option value="gemini_api">Gemini API (Google AI Studio)</option>
+                </select>
+              </div>
+
+              {config.active_provider === "agy" && (
+                <div className="form-group">
+                  <label className="form-label">AGY Executable Path</label>
+                  <input 
+                    type="text"
+                    className="text-input"
+                    value={config.agy_path}
+                    onChange={(e) => setConfig({ ...config, agy_path: e.target.value })}
+                  />
+                  {!detectedTools.agy && (
+                    <span style={{ color: "var(--accent-amber)", fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                      Warning: 'agy' was not detected in PATH or at the specified location.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {config.active_provider === "claude" && (
+                <div className="form-group">
+                  <label className="form-label">Claude Command / Executable</label>
+                  <input 
+                    type="text"
+                    className="text-input"
+                    value={config.claude_command}
+                    onChange={(e) => setConfig({ ...config, claude_command: e.target.value })}
+                  />
+                  {!detectedTools.claude && (
+                    <span style={{ color: "var(--accent-amber)", fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                      Warning: 'claude' was not detected in PATH.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {config.active_provider === "gemini_api" && (
+                <div className="form-group">
+                  <label className="form-label">Gemini API Key</label>
+                  <input 
+                    type="password"
+                    className="text-input"
+                    placeholder="AIzaSy..."
+                    value={config.gemini_api_key}
+                    onChange={(e) => setConfig({ ...config, gemini_api_key: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowSettings(false)}>
+                Cancel
+              </button>
+              <button className="action-btn" style={{ padding: "0.5rem 1rem" }} onClick={handleSaveConfig}>
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
