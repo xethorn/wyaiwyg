@@ -57,15 +57,20 @@ fn run_gh_command(project_path: &str, args: &[&str]) -> Result<String, String> {
 fn save_local_tasks(project_path: &str, tasks: &[Task]) -> Result<(), String> {
     let serialized = serde_json::to_string_pretty(tasks)
         .map_err(|e| format!("Failed to serialize tasks: {}", e))?;
-    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    let wysiwyg_dir = Path::new(project_path).join(".wysiwyg");
+    let _ = fs::create_dir_all(&wysiwyg_dir);
+    let local_path = wysiwyg_dir.join("tasks.json");
     fs::write(local_path, serialized)
         .map_err(|e| format!("Failed to write local tasks file: {}", e))?;
     Ok(())
 }
 
-// Fetch tasks (either from local JSON, git issues, or fallback mocks)
+// Fetch tasks (either from local JSON inside .wysiwyg, git issues, or fallback mocks)
 pub fn get_issues(project_path: &str) -> Result<Vec<Task>, String> {
-    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    let wysiwyg_dir = Path::new(project_path).join(".wysiwyg");
+    let _ = fs::create_dir_all(&wysiwyg_dir);
+    let local_path = wysiwyg_dir.join("tasks.json");
+    
     if local_path.exists() {
         if let Ok(content) = fs::read_to_string(&local_path) {
             if let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&content) {
@@ -102,7 +107,9 @@ pub fn get_issues(project_path: &str) -> Result<Vec<Task>, String> {
 
 // Create a new task (saved locally or pushed to Git issues)
 pub fn create_issue(project_path: &str, title: &str, body: &str) -> Result<Task, String> {
-    let local_path = Path::new(project_path).join("wyaiwyg_tasks.json");
+    let wysiwyg_dir = Path::new(project_path).join(".wysiwyg");
+    let _ = fs::create_dir_all(&wysiwyg_dir);
+    let local_path = wysiwyg_dir.join("tasks.json");
     let mut tasks = get_issues(project_path).unwrap_or_default();
     
     // Determine new task ID

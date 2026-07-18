@@ -56,15 +56,20 @@ impl Default for AppConfig {
     }
 }
 
-const CONFIG_FILE: &str = "../wyaiwyg_config.json"; // stored in project root relative to src-tauri execution CWD
+fn get_config_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/michaelortali".to_string());
+    let dir = Path::new(&home).join(".wysiwyg");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("config.json")
+}
 
 pub fn load() -> AppConfig {
-    let path = Path::new(CONFIG_FILE);
+    let path = get_config_path();
     if !path.exists() {
         return AppConfig::default();
     }
 
-    let mut file = match File::open(path) {
+    let mut file = match File::open(&path) {
         Ok(f) => f,
         Err(_) => return AppConfig::default(),
     };
@@ -78,11 +83,11 @@ pub fn load() -> AppConfig {
 }
 
 pub fn save(config: &AppConfig) -> Result<(), String> {
-    let path = Path::new(CONFIG_FILE);
+    let path = get_config_path();
     let serialized = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    let mut file = File::create(path)
+    let mut file = File::create(&path)
         .map_err(|e| format!("Failed to create config file: {}", e))?;
 
     file.write_all(serialized.as_bytes())

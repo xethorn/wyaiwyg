@@ -72,21 +72,18 @@ function App() {
     claude: false
   });
 
-  // Local folder project info state
-  const [projectInfo, setProjectInfo] = useState<ProjectInfo>({
-    name: "wyaiwyg",
-    path: "",
-    is_git: false
-  });
+  // Local folder projects list state
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [activeProject, setActiveProject] = useState<ProjectInfo | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Load tasks and settings on startup
   useEffect(() => {
-    loadTasks();
     loadConfig();
     checkTools();
     loadProjectInfo();
+    loadProjectsList();
   }, []);
 
   // Auto-scroll chat window
@@ -169,10 +166,36 @@ function App() {
 
   const loadProjectInfo = async () => {
     try {
-      const info = await invoke<ProjectInfo>("get_project_info");
-      setProjectInfo(info);
+      const info = await invoke<ProjectInfo | null>("get_project_info");
+      setActiveProject(info);
+      if (info) {
+        loadTasks();
+      }
     } catch (error) {
       console.error("Failed to load project details", error);
+    }
+  };
+
+  const loadProjectsList = async () => {
+    try {
+      const list = await invoke<ProjectInfo[]>("fetch_projects");
+      setProjects(list);
+    } catch (error) {
+      console.error("Failed to load projects list", error);
+    }
+  };
+
+  const handleSelectProject = async (path: string) => {
+    try {
+      const info = await invoke<ProjectInfo>("select_project", { path });
+      setActiveProject(info);
+      setSelectedTaskId(null);
+      setActiveView("project");
+      setTimeout(() => {
+        loadTasks();
+      }, 100);
+    } catch (error) {
+      console.error("Failed to select project", error);
     }
   };
 
@@ -180,9 +203,10 @@ function App() {
     try {
       const info = await invoke<ProjectInfo | null>("select_project_folder");
       if (info) {
-        setProjectInfo(info);
+        setActiveProject(info);
         setSelectedTaskId(null);
         setActiveView("project");
+        loadProjectsList();
         setTimeout(() => {
           loadTasks();
         }, 100);
@@ -364,70 +388,92 @@ function App() {
               </button>
             </div>
             
-            {/* Project: wyaiwyg */}
-            <div 
-              className={`menu-item ${activeView === "project" ? "active" : ""}`}
-              onClick={() => {
-                setActiveView("project");
-                setSelectedTaskId(null);
-                setProjectExpanded(!projectExpanded);
-              }}
-              title={projectInfo.path}
-            >
-              {/* Dynamic Chevron indicator on the left */}
-              <svg 
-                className="menu-item-icon" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                style={{ 
-                  width: "10px", 
-                  height: "10px", 
-                  marginRight: "4px",
-                  transform: projectExpanded ? "rotate(90deg)" : "rotate(0deg)", 
-                  transition: "transform 0.1s" 
-                }}
-              >
-                <polyline points="9 18 15 12 9 6"></polyline>
-              </svg>
-              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                {projectExpanded && <line x1="2" y1="10" x2="22" y2="10"></line>}
-              </svg>
-              <span>{projectInfo.name}</span>
-            </div>
-
-            {/* List Active Tasks inside project (only if projectExpanded is true) */}
-            {projectExpanded && (
-              <div className="submenu-list">
-                {tasks.map((task) => (
-                  <div 
-                    key={task.id}
-                    className={`submenu-item ${selectedTaskId === task.id ? "active" : ""}`}
-                    onClick={() => {
-                      setSelectedTaskId(task.id);
-                      setActiveView("chat");
-                    }}
-                    title={`#${task.id}: ${task.title}`}
-                    style={{ display: "flex", alignItems: "center" }}
-                  >
-                    <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
-                      {task.status === "done" ? (
-                        <>
-                          <polyline points="9 11 12 14 22 4"></polyline>
-                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                        </>
-                      ) : (
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                      )}
-                    </svg>
-                    <span>#{task.id} {task.title}</span>
-                  </div>
-                ))}
+            {projects.length === 0 ? (
+              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", padding: "0.5rem 0.75rem", fontStyle: "italic" }}>
+                No projects opened
               </div>
+            ) : (
+              projects.map((project) => {
+                const isActive = activeProject?.path === project.path;
+                return (
+                  <div key={project.path}>
+                    {/* Project Folder Item */}
+                    <div 
+                      className={`menu-item ${isActive && activeView === "project" ? "active" : ""}`}
+                      onClick={() => {
+                        if (isActive) {
+                          setProjectExpanded(!projectExpanded);
+                        } else {
+                          handleSelectProject(project.path);
+                          setProjectExpanded(true);
+                        }
+                      }}
+                      title={project.path}
+                    >
+                      {/* Dynamic Chevron indicator on the left */}
+                      <svg 
+                        className="menu-item-icon" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        style={{ 
+                          width: "10px", 
+                          height: "10px", 
+                          marginRight: "4px",
+                          transform: (isActive && projectExpanded) ? "rotate(90deg)" : "rotate(0deg)", 
+                          transition: "transform 0.1s" 
+                        }}
+                      >
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                      <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "14px", height: "14px" }}>
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        {(isActive && projectExpanded) && <line x1="2" y1="10" x2="22" y2="10"></line>}
+                      </svg>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</span>
+                    </div>
+
+                    {/* Render Nested Task list for this project if active & expanded */}
+                    {isActive && projectExpanded && (
+                      <div className="submenu-list">
+                        {tasks.length === 0 ? (
+                          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", padding: "0.25rem 0.5rem", fontStyle: "italic" }}>
+                            No active tasks
+                          </div>
+                        ) : (
+                          tasks.map((task) => (
+                            <div 
+                              key={task.id}
+                              className={`submenu-item ${selectedTaskId === task.id ? "active" : ""}`}
+                              onClick={() => {
+                                setSelectedTaskId(task.id);
+                                setActiveView("chat");
+                              }}
+                              title={`#${task.id}: ${task.title}`}
+                              style={{ display: "flex", alignItems: "center" }}
+                            >
+                              <svg className="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: "11px", height: "11px", marginRight: "6px", flexShrink: 0 }}>
+                                {task.status === "done" ? (
+                                  <>
+                                    <polyline points="9 11 12 14 22 4"></polyline>
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                  </>
+                                ) : (
+                                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                )}
+                              </svg>
+                              <span>#{task.id} {task.title}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </nav>
@@ -452,15 +498,26 @@ function App() {
 
         {activeView === "project" && (
           <div className="coming-soon-container drag-zone">
-            <div className="coming-soon-title">{projectInfo.name}</div>
-            <div className="coming-soon-desc" style={{ maxWidth: "450px" }}>
-              Location: <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{projectInfo.path}</span>
-              <br/><br/>
-              Welcome to the local folder project workspace. Select one of the active tasks in the sidebar to open the conversational agent chat interface and start developing!
-            </div>
+            {activeProject ? (
+              <>
+                <div className="coming-soon-title">{activeProject.name}</div>
+                <div className="coming-soon-desc" style={{ maxWidth: "450px" }}>
+                  Location: <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{activeProject.path}</span>
+                  <br/><br/>
+                  Welcome to the local folder project workspace. Select one of the active tasks in the sidebar to open the conversational agent chat interface and start developing!
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="coming-soon-title">No Projects Opened</div>
+                <div className="coming-soon-desc" style={{ maxWidth: "450px" }}>
+                  Click the <strong>+</strong> folder button in the sidebar or click below to open your first local folder project directory!
+                </div>
+              </>
+            )}
             <div className="panel-header-actions no-drag" style={{ marginTop: "1rem" }}>
               <button className="btn-secondary" onClick={handleSelectProjectFolder}>📁 Open Folder Project</button>
-              <button className="btn-secondary" onClick={loadTasks}>Sync Tasks</button>
+              {activeProject && <button className="btn-secondary" onClick={loadTasks}>Sync Tasks</button>}
               <button className="btn-secondary" onClick={() => setShowSettings(true)}>⚙ Settings</button>
             </div>
           </div>
