@@ -42,6 +42,10 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [projectExpanded, setProjectExpanded] = useState(true);
 
+  // Resizing sidebar state
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isResizing, setIsResizing] = useState(false);
+
   // Core Data States
   const [tasks, setTasks] = useState<Task[]>([]);
   const [chatHistories, setChatHistories] = useState<{ [taskId: string]: ChatMessage[] }>({});
@@ -75,6 +79,34 @@ function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistories, isExecuting]);
+
+  // Sidebar resizing handlers
+  const startResizing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = Math.max(180, Math.min(500, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Periodic comment listener simulation
   useEffect(() => {
@@ -248,7 +280,7 @@ function App() {
   return (
     <div className="app-container">
       {/* Left Sidebar Pane */}
-      <aside className="sidebar drag-zone">
+      <aside className="sidebar drag-zone" style={{ width: `${sidebarWidth}px` }}>
         <nav className="sidebar-menu no-drag">
           <div className="menu-section">
             {/* Central Command Link */}
@@ -338,6 +370,9 @@ function App() {
           </div>
         </nav>
       </aside>
+
+      {/* Sidebar Resizer Handle */}
+      <div className="sidebar-resizer no-drag" onMouseDown={startResizing} />
 
       {/* Main Panel Pane (Middle) */}
       <main className="main-panel">
