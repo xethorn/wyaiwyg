@@ -156,9 +156,9 @@ body {
 
 .submenu-item {
   font-size: 0.775rem;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   color: var(--text-secondary);
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -167,14 +167,13 @@ body {
 }
 
 .submenu-item:hover {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.04);
   color: var(--text-primary);
 }
 
 .submenu-item.active {
   color: #fff;
-  background-color: rgba(139, 92, 246, 0.15);
-  border-left: 2px solid var(--accent-purple);
+  background-color: rgba(53, 116, 240, 0.15);
   font-weight: 500;
 }
 
